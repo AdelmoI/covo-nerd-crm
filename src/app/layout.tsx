@@ -1,7 +1,10 @@
 // src/app/layout.tsx
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import SessionProvider from '@/components/providers/SessionProvider'
+import { getServerSession } from 'next-auth/next'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 
 const geist = Geist({
   variable: "--font-geist-sans",
@@ -30,10 +33,6 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico",
     apple: "/favicon.ico",
   },
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-  },
   robots: {
     index: false, // CRM interno, non indicizzare
     follow: false,
@@ -46,22 +45,32 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#1D70B3",
+};
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Ottieni sessione server-side per evitare flash di contenuto non autenticato
+  const session = await getServerSession(authOptions)
+
   return (
     <html lang="it">
       <head>
-        <meta name="theme-color" content="#1D70B3" />
         <meta name="msapplication-TileColor" content="#1D70B3" />
       </head>
       <body
         className={`${geist.variable} ${geistMono.variable} antialiased`}
         style={{ fontFamily: 'var(--font-geist-sans)' }}
       >
-        {children}
+        <SessionProvider session={session}>
+          {children}
+        </SessionProvider>
       </body>
     </html>
   );

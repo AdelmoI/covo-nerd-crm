@@ -5,3 +5,8 @@
         "titleBar.activeForeground": "#FBFAF6"
     }
 }
+
+{
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true
+}

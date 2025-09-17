@@ -1,65 +1,40 @@
 // src/lib/models/User.ts
-import mongoose from 'mongoose';
+import mongoose from 'mongoose'
 
-const UserSchema = new mongoose.Schema({
+const userSchema = new mongoose.Schema({
+  name: { 
+    type: String, 
+    required: true 
+  },
   email: { 
     type: String, 
     required: true, 
     unique: true,
-    lowercase: true,
-    trim: true
+    lowercase: true
   },
   password: { 
     type: String, 
-    required: true,
-    minlength: 6
-  },
-  name: { 
-    type: String, 
-    required: true,
-    trim: true
+    required: true, 
+    select: false // Non restituire la password nelle query di default
   },
   role: { 
     type: String, 
     enum: ['admin', 'operator'], 
     default: 'operator' 
   },
-  store: { 
-    type: String, 
-    enum: [
-      'Roma', 'Foggia', 'Manfredonia', 'Cosenza', 'Viterbo', 
-      'Torino', 'Trapani', 'Parma', 'Erba', 'Bari'
-    ], 
-    required: true 
-  },
+  // Rimuoviamo stores - accesso centralizzato per tutti
   isActive: { 
     type: Boolean, 
     default: true 
   },
-  lastLogin: {
-    type: Date,
-    default: null
-  },
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
-  },
-  updatedAt: { 
-    type: Date, 
-    default: Date.now 
+  lastLogin: { 
+    type: Date 
   }
-}, {
-  timestamps: true // Aggiorna automaticamente createdAt e updatedAt
-});
+}, { 
+  timestamps: true 
+})
 
-// Indici per performance
-UserSchema.index({ email: 1 });
-UserSchema.index({ store: 1, isActive: 1 });
+// Indice per ricerca veloce per email
+userSchema.index({ email: 1 })
 
-// Middleware per aggiornare updatedAt
-UserSchema.pre('save', function(next) {
-  this.updatedAt = new Date();
-  next();
-});
-
-export default mongoose.models.User || mongoose.model('User', UserSchema);
+export default mongoose.models.User || mongoose.model('User', userSchema)
