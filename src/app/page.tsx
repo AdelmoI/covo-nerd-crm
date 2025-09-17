@@ -2,9 +2,11 @@
 'use client';
 
 import { useState } from 'react';
+import Logo from '@/components/ui/Logo';
 
 export default function Home() {
   const [dbStatus, setDbStatus] = useState<string>('Non testato');
+  const [modelsStatus, setModelsStatus] = useState<string>('Non testato');
   const [beeperStatus, setBeeperStatus] = useState<string>('Non testato');
 
   const testDatabase = async () => {
@@ -20,6 +22,22 @@ export default function Home() {
       }
     } catch (error) {
       setDbStatus('❌ Errore di connessione');
+    }
+  };
+
+  const testModels = async () => {
+    setModelsStatus('Testando...');
+    try {
+      const response = await fetch('/api/test/models', { method: 'POST' });
+      const data = await response.json();
+      
+      if (response.ok) {
+        setModelsStatus('✅ Modelli OK');
+      } else {
+        setModelsStatus(`❌ Errore: ${data.error}`);
+      }
+    } catch (error) {
+      setModelsStatus('❌ Errore di connessione');
     }
   };
 
@@ -43,10 +61,7 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
       <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2" style={{ color: '#1D70B3' }}>
-            Il Covo del Nerd
-          </h1>
-          <p className="text-gray-600">CRM System - Setup & Test</p>
+          <Logo size="lg" className="justify-center mb-4" />
         </div>
         
         <div className="space-y-6">
@@ -59,6 +74,18 @@ export default function Home() {
               style={{ backgroundColor: '#1D70B3' }}
             >
               Testa Connessione Database
+            </button>
+          </div>
+          
+          <div className="border rounded-lg p-4">
+            <h3 className="font-semibold mb-2">Modelli MongoDB</h3>
+            <p className="text-sm text-gray-600 mb-3">Status: {modelsStatus}</p>
+            <button
+              onClick={testModels}
+              className="w-full text-white py-2 px-4 rounded hover:opacity-90 transition-colors"
+              style={{ backgroundColor: '#8B5A2B' }}
+            >
+              Testa Modelli CRM
             </button>
           </div>
           
