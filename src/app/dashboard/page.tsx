@@ -236,7 +236,7 @@ export default function Dashboard() {
                             <BarChart3 size={16} />
                             Analytics
                         </button>
-                    </nav>
+                   </nav>
                 </div>
             </div>
 

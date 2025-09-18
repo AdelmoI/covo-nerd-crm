@@ -15,7 +15,7 @@ export default withAuth(
     // Proteggi API sensibili
     if (pathname.startsWith('/api/admin') && token?.role !== 'admin') {
       return NextResponse.json(
-        { error: 'Accesso non autorizzato' }, 
+        { error: 'Accesso non autorizzato' },
         { status: 403 }
       )
     }
@@ -31,7 +31,7 @@ export default withAuth(
     callbacks: {
       authorized: ({ token, req }) => {
         const { pathname } = req.nextUrl
-        
+
         // ROUTE PUBBLICHE - NON RICHIEDONO AUTENTICAZIONE
         if (
           pathname === '/' ||                          // Homepage

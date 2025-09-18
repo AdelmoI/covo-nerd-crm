@@ -1,412 +1,616 @@
 // src/components/dashboard/ConversationsDashboard.tsx
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { MessageSquare, Search, Filter, Plus, AlertCircle, RefreshCw } from 'lucide-react';
+import { useState, useEffect } from "react";
+import {
+  MessageSquare,
+  Search,
+  Filter,
+  MoreVertical,
+  Phone,
+  Mail,
+  User,
+  Tag,
+  Clock,
+  MapPin,
+  Package,
+  Plus,
+  Edit3,
+  Star,
+} from "lucide-react";
 
-// Tipi per le conversazioni
+// Tipi per i dati
 interface BeeperConversation {
-    id: string;
-    guid: string;
-    chatIdentifier: string;
-    displayName: string;
-    service: 'whatsapp' | 'telegram' | 'instagram' | 'facebook' | 'email' | 'other';
-    lastMessage: {
-        text: string;
-        timestamp: number;
-        isFromMe: boolean;
-        senderName?: string;
-    };
-    unreadCount: number;
-    participants: string[];
-    metadata?: {
-        store?: string;
-        orderId?: string;
-        tags?: string[];
-        assignedTo?: string;
-        priority?: 'bassa' | 'normale' | 'alta' | 'urgente';
-        status?: 'nuovo' | 'in_corso' | 'risolto' | 'chiuso';
-    };
+  id: string;
+  title: string;
+  network: string;
+  type: "dm" | "group";
+  unreadCount: number;
+  participants: number;
+  lastActivity: string;
+  lastMessage?: string;
+  avatar?: string;
 }
 
-// Mock data basato sulla struttura attuale del progetto
-const MOCK_CONVERSATIONS: BeeperConversation[] = [
-    {
-        id: 'conv_1',
-        guid: 'whatsapp_12345',
-        chatIdentifier: '+39123456789',
-        displayName: 'Mario Rossi',
-        service: 'whatsapp',
-        lastMessage: {
-            text: 'Salve, vorrei info sulla Switch OLED disponibilità a Roma',
-            timestamp: Date.now() - 300000, // 5 minuti fa
-            isFromMe: false,
-            senderName: 'Mario Rossi'
-        },
-        unreadCount: 2,
-        participants: ['+39123456789'],
-        metadata: {
-            store: 'Roma',
-            tags: ['nintendo', 'console'],
-            priority: 'normale',
-            status: 'nuovo'
-        }
-    },
-    {
-        id: 'conv_2',
-        guid: 'telegram_67890',
-        chatIdentifier: '@luciabianchi',
-        displayName: 'Lucia Bianchi',
-        service: 'telegram',
-        lastMessage: {
-            text: 'Perfetto, grazie per l\'assistenza!',
-            timestamp: Date.now() - 900000, // 15 minuti fa
-            isFromMe: false,
-            senderName: 'Lucia Bianchi'
-        },
-        unreadCount: 0,
-        participants: ['@luciabianchi'],
-        metadata: {
-            store: 'Bari',
-            orderId: 'ORD-2024-0312',
-            tags: ['risolto', 'soddisfatto'],
-            assignedTo: 'operatore1',
-            priority: 'bassa',
-            status: 'risolto'
-        }
-    },
-    {
-        id: 'conv_3',
-        guid: 'instagram_54321',
-        chatIdentifier: 'gamer_pro_2024',
-        displayName: 'GamerPro',
-        service: 'instagram',
-        lastMessage: {
-            text: 'Il PC gaming che mi avete assemblato ha un problema...',
-            timestamp: Date.now() - 1800000, // 30 minuti fa
-            isFromMe: false,
-            senderName: 'GamerPro'
-        },
-        unreadCount: 1,
-        participants: ['gamer_pro_2024'],
-        metadata: {
-            store: 'Torino',
-            tags: ['pc_gaming', 'assistenza_tecnica'],
-            priority: 'alta',
-            status: 'in_corso',
-            assignedTo: 'tecnico_specialist'
-        }
-    }
-];
+interface CustomerInfo {
+  name: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  location?: string;
+  orders?: number;
+  lastOrder?: string;
+}
 
-const STORES = ['Tutti', 'Roma', 'Foggia', 'Manfredonia', 'Cosenza', 'Viterbo', 'Torino', 'Trapani', 'Parma', 'Erba', 'Bari', 'Online'];
-const SERVICES = ['Tutti', 'whatsapp', 'telegram', 'instagram', 'facebook', 'email'];
-const STATUSES = ['Tutti', 'nuovo', 'in_corso', 'risolto', 'chiuso'];
-const PRIORITIES = ['Tutti', 'urgente', 'alta', 'normale', 'bassa'];
+interface ConversationNote {
+  id: string;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+  isPrivate: boolean;
+}
+
+interface ConversationTag {
+  id: string;
+  name: string;
+  color: string;
+  category: string;
+}
 
 export default function ConversationsDashboard() {
-    const [conversations, setConversations] = useState<BeeperConversation[]>(MOCK_CONVERSATIONS);
-    const [loading, setLoading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedStore, setSelectedStore] = useState('Tutti');
-    const [selectedService, setSelectedService] = useState('Tutti');
-    const [selectedStatus, setSelectedStatus] = useState('Tutti');
-    const [selectedPriority, setSelectedPriority] = useState('Tutti');
-    const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [conversations, setConversations] = useState<BeeperConversation[]>([]);
+  const [selectedConversation, setSelectedConversation] =
+    useState<BeeperConversation | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState<string>(""); // AGGIUNGI QUESTA RIGA
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
+  const [notes, setNotes] = useState<ConversationNote[]>([]);
+  const [tags, setTags] = useState<ConversationTag[]>([]);
 
-    // Funzione per sincronizzare con Beeper API
-    const syncWithBeeper = async () => {
-        setLoading(true);
-        try {
-            const response = await fetch('/api/beeper/sync');
-            if (response.ok) {
-                const data = await response.json();
-                if (data.success) {
-                    setConversations(data.conversations || MOCK_CONVERSATIONS);
-                    setLastSync(new Date());
-                }
-            }
-        } catch (error) {
-            console.error('Errore sincronizzazione Beeper:', error);
-            // Mantieni mock data in caso di errore
+  // Carica le conversazioni reali da Beeper
+  useEffect(() => {
+    loadConversations();
+
+    // Auto-refresh ogni 30 secondi
+    const refreshInterval = setInterval(() => {
+      console.log("🔄 Auto-refresh conversazioni...");
+      loadConversations();
+    }, 30000); // 30 secondi
+
+    return () => clearInterval(refreshInterval);
+  }, []);
+
+  const loadConversations = async () => {
+    try {
+      setLoading(true);
+      console.log("🔄 Caricamento conversazioni...");
+
+      const response = await fetch("/api/beeper/sync");
+      const data = await response.json();
+
+      console.log("📊 Risposta API:", data);
+
+      if (data.success && data.conversations) {
+        setConversations(data.conversations);
+        console.log(`✅ Caricate ${data.conversations.length} conversazioni`);
+
+        // Seleziona automaticamente la prima conversazione
+        if (data.conversations.length > 0) {
+          setSelectedConversation(data.conversations[0]);
+          loadConversationDetails(data.conversations[0].id);
         }
-        setLoading(false);
-    };
 
-    // Sincronizzazione automatica ogni 30 secondi
-    useEffect(() => {
-        const interval = setInterval(syncWithBeeper, 30000);
-        syncWithBeeper(); // Sync iniziale
-        return () => clearInterval(interval);
-    }, []);
+        // Mostra messaggio se sono dati mock
+        if (data.warning) {
+          console.warn("⚠️ " + data.warning);
+        }
+      } else {
+        console.error("❌ Errore nel formato risposta API");
+        setConversations([]);
+      }
+    } catch (error) {
+      console.error("❌ Errore caricamento conversazioni:", error);
+      // In caso di errore totale, usa conversazioni vuote
+      setConversations([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // Filtro conversazioni
-    const filteredConversations = conversations.filter(conv => {
-        const matchesSearch = conv.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            conv.lastMessage.text.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            conv.chatIdentifier.toLowerCase().includes(searchTerm.toLowerCase());
+  const loadConversationDetails = async (conversationId: string) => {
+    try {
+      // Carica dettagli conversazione, note, tag
+      const [customerRes, notesRes, tagsRes] = await Promise.all([
+        fetch(`/api/conversations/${conversationId}/customer`),
+        fetch(`/api/conversations/${conversationId}/notes`),
+        fetch(`/api/conversations/${conversationId}/tags`),
+      ]);
 
-        const matchesStore = selectedStore === 'Tutti' || conv.metadata?.store === selectedStore;
-        const matchesService = selectedService === 'Tutti' || conv.service === selectedService;
-        const matchesStatus = selectedStatus === 'Tutti' || conv.metadata?.status === selectedStatus;
-        const matchesPriority = selectedPriority === 'Tutti' || conv.metadata?.priority === selectedPriority;
+      const customerData = await customerRes.json();
+      const notesData = await notesRes.json();
+      const tagsData = await tagsRes.json();
 
-        return matchesSearch && matchesStore && matchesService && matchesStatus && matchesPriority;
-    });
+      setCustomerInfo(customerData.customer || null);
+      setNotes(notesData.notes || []);
+      setTags(tagsData.tags || []);
+    } catch (error) {
+      console.error("Errore caricamento dettagli:", error);
+    }
+  };
 
-    // Funzioni helper
-    const formatTimestamp = (timestamp: number) => {
-        const now = Date.now();
-        const diff = now - timestamp;
-        const minutes = Math.floor(diff / 60000);
-        const hours = Math.floor(diff / 3600000);
-        const days = Math.floor(diff / 86400000);
+  const handleConversationSelect = (conversation: BeeperConversation) => {
+    setSelectedConversation(conversation);
+    loadConversationDetails(conversation.id);
+  };
 
-        if (minutes < 1) return 'ora';
-        if (minutes < 60) return `${minutes}m fa`;
-        if (hours < 24) return `${hours}h fa`;
-        return `${days}g fa`;
-    };
+  const getNetworkIcon = (network: string) => {
+    switch (network.toLowerCase()) {
+      case "whatsapp":
+        return "💬";
+      case "instagram":
+        return "📷";
+      case "telegram":
+        return "✈️";
+      case "beeper":
+        return "🔔";
+      default:
+        return "💬";
+    }
+  };
 
-    const getServiceIcon = (service: string) => {
-        const icons = {
-            whatsapp: '📱',
-            telegram: '✈️',
-            instagram: '📷',
-            facebook: '👥',
-            email: '✉️',
-            other: '💬'
-        };
-        return icons[service as keyof typeof icons] || icons.other;
-    };
+  const formatLastActivity = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffHours = Math.abs(now.getTime() - date.getTime()) / 36e5;
 
-    const getPriorityColor = (priority?: string) => {
-        const colors = {
-            urgente: 'bg-red-100 text-red-800 border-red-200',
-            alta: 'bg-orange-100 text-orange-800 border-orange-200',
-            normale: 'bg-blue-100 text-blue-800 border-blue-200',
-            bassa: 'bg-gray-100 text-gray-800 border-gray-200'
-        };
-        return colors[priority as keyof typeof colors] || colors.normale;
-    };
+    if (diffHours < 1) return "Ora";
+    if (diffHours < 24) return `${Math.floor(diffHours)}h fa`;
+    if (diffHours < 48) return "Ieri";
+    return date.toLocaleDateString("it-IT");
+  };
 
-    const getStatusColor = (status?: string) => {
-        const colors = {
-            nuovo: 'bg-green-100 text-green-800 border-green-200',
-            in_corso: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-            risolto: 'bg-blue-100 text-blue-800 border-blue-200',
-            chiuso: 'bg-gray-100 text-gray-800 border-gray-200'
-        };
-        return colors[status as keyof typeof colors] || colors.nuovo;
-    };
+  const filteredConversations = conversations.filter(
+    (conv) =>
+      conv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      conv.network.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
+  if (loading) {
     return (
-        <div className="p-6 bg-gray-50 min-h-screen">
-            {/* Header */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                            <MessageSquare className="text-[#1D70B3]" size={32} />
-                            Conversazioni Clienti
-                        </h1>
-                        <p className="text-gray-600 mt-2">
-                            Gestisci tutte le conversazioni dei 10 negozi Il Covo del Nerd
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={syncWithBeeper}
-                            disabled={loading}
-                            className="bg-[#1D70B3] text-white px-4 py-2 rounded-lg hover:bg-[#155a94] transition-colors flex items-center gap-2 disabled:opacity-50"
-                        >
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                            {loading ? 'Sincronizzando...' : 'Sincronizza'}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Info sincronizzazione */}
-                {lastSync && (
-                    <div className="text-sm text-gray-500 flex items-center gap-2">
-                        <AlertCircle size={14} />
-                        Ultima sincronizzazione: {lastSync.toLocaleTimeString()}
-                    </div>
-                )}
-            </div>
-
-            {/* Filtri */}
-            <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-                    {/* Ricerca */}
-                    <div className="lg:col-span-2">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                            <input
-                                type="text"
-                                placeholder="Cerca conversazioni..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Filtro Negozio */}
-                    <div>
-                        <select
-                            value={selectedStore}
-                            onChange={(e) => setSelectedStore(e.target.value)}
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D70B3]"
-                        >
-                            {STORES.map(store => (
-                                <option key={store} value={store}>{store}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Filtro Servizio */}
-                    <div>
-                        <select
-                            value={selectedService}
-                            onChange={(e) => setSelectedService(e.target.value)}
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D70B3]"
-                        >
-                            {SERVICES.map(service => (
-                                <option key={service} value={service}>
-                                    {service === 'Tutti' ? 'Tutti' : service.charAt(0).toUpperCase() + service.slice(1)}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Filtro Stato */}
-                    <div>
-                        <select
-                            value={selectedStatus}
-                            onChange={(e) => setSelectedStatus(e.target.value)}
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D70B3]"
-                        >
-                            {STATUSES.map(status => (
-                                <option key={status} value={status}>
-                                    {status === 'Tutti' ? 'Tutti' : status.replace('_', ' ').charAt(0).toUpperCase() + status.slice(1)}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Filtro Priorità */}
-                    <div>
-                        <select
-                            value={selectedPriority}
-                            onChange={(e) => setSelectedPriority(e.target.value)}
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1D70B3]"
-                        >
-                            {PRIORITIES.map(priority => (
-                                <option key={priority} value={priority}>
-                                    {priority === 'Tutti' ? 'Tutti' : priority.charAt(0).toUpperCase() + priority.slice(1)}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            {/* Lista Conversazioni */}
-            <div className="bg-white rounded-xl shadow-sm border">
-                <div className="p-6 border-b">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-xl font-semibold text-gray-900">
-                            {filteredConversations.length} Conversazioni
-                        </h2>
-                        <div className="flex items-center gap-4 text-sm text-gray-500">
-                            <span>Non lette: {filteredConversations.filter(c => c.unreadCount > 0).length}</span>
-                            <span>In corso: {filteredConversations.filter(c => c.metadata?.status === 'in_corso').length}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="divide-y">
-                    {filteredConversations.length === 0 ? (
-                        <div className="p-8 text-center text-gray-500">
-                            <MessageSquare className="mx-auto mb-4 text-gray-300" size={48} />
-                            <p>Nessuna conversazione trovata</p>
-                        </div>
-                    ) : (
-                        filteredConversations.map((conversation) => (
-                            <div
-                                key={conversation.id}
-                                className={`p-6 hover:bg-gray-50 cursor-pointer transition-colors ${conversation.unreadCount > 0 ? 'bg-blue-50 border-l-4 border-l-[#1D70B3]' : ''
-                                    }`}
-                            >
-                                <div className="flex items-start justify-between">
-                                    <div className="flex items-start gap-4 flex-1">
-                                        {/* Avatar/Service Icon */}
-                                        <div className="text-2xl">{getServiceIcon(conversation.service)}</div>
-
-                                        {/* Dettagli conversazione */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h3 className="font-semibold text-gray-900 truncate">
-                                                    {conversation.displayName}
-                                                </h3>
-                                                {conversation.metadata?.store && (
-                                                    <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                                                        {conversation.metadata.store}
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            <p className="text-gray-600 text-sm mb-2 line-clamp-2">
-                                                {conversation.lastMessage.text}
-                                            </p>
-
-                                            {/* Tags */}
-                                            {conversation.metadata?.tags && conversation.metadata.tags.length > 0 && (
-                                                <div className="flex flex-wrap gap-1 mb-2">
-                                                    {conversation.metadata.tags.map((tag, index) => (
-                                                        <span key={index} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                                                            #{tag}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Info laterali */}
-                                    <div className="flex flex-col items-end gap-2 ml-4">
-                                        <span className="text-xs text-gray-500">
-                                            {formatTimestamp(conversation.lastMessage.timestamp)}
-                                        </span>
-
-                                        {/* Contatori e stati */}
-                                        <div className="flex items-center gap-2">
-                                            {conversation.unreadCount > 0 && (
-                                                <span className="bg-[#1D70B3] text-white text-xs rounded-full px-2 py-1 min-w-[20px] text-center">
-                                                    {conversation.unreadCount}
-                                                </span>
-                                            )}
-
-                                            {conversation.metadata?.priority && conversation.metadata.priority !== 'normale' && (
-                                                <span className={`text-xs border rounded px-2 py-1 ${getPriorityColor(conversation.metadata.priority)}`}>
-                                                    {conversation.metadata.priority}
-                                                </span>
-                                            )}
-
-                                            {conversation.metadata?.status && (
-                                                <span className={`text-xs border rounded px-2 py-1 ${getStatusColor(conversation.metadata.status)}`}>
-                                                    {conversation.metadata.status.replace('_', ' ')}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1D70B3] mx-auto"></div>
+          <p className="mt-4 text-gray-600">Caricamento conversazioni...</p>
+          {loadingProgress && (
+            <p className="mt-2 text-sm text-gray-500">{loadingProgress}</p>
+          )}
         </div>
+      </div>
     );
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-50">
+      {/* COLONNA SINISTRA: Lista Conversazioni */}
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+        {/* Header con ricerca */}
+        <div className="p-4 border-b border-gray-200">
+          <div className="relative">
+            <Search
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              size={16}
+            />
+            <input
+              type="text"
+              placeholder="Cerca conversazioni..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent"
+            />
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <button className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-sm rounded-md hover:bg-gray-200">
+              <Filter size={14} />
+              Filtri
+            </button>
+            <span className="text-sm text-gray-500">
+              {filteredConversations.length} conversazioni
+            </span>
+          </div>
+        </div>
+
+        {/* Lista conversazioni */}
+        <div className="flex-1 overflow-y-auto">
+          {filteredConversations.map((conversation) => (
+            <div
+              key={conversation.id}
+              onClick={() => handleConversationSelect(conversation)}
+              className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+                selectedConversation?.id === conversation.id
+                  ? "bg-blue-50 border-l-4 border-l-[#1D70B3]"
+                  : ""
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                    {conversation.title.charAt(0).toUpperCase()}
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium text-gray-900 truncate">
+                      {conversation.title}
+                    </span>
+                    <span className="text-xs">
+                      {getNetworkIcon(conversation.network)}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-gray-600 truncate mb-2">
+                    {conversation.lastMessage || "Nessun messaggio recente"}
+                  </p>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <Clock size={12} />
+                      {formatLastActivity(conversation.lastActivity)}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {conversation.unreadCount > 0 && (
+                        <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                          {conversation.unreadCount}
+                        </span>
+                      )}
+                      {conversation.type === "group" && (
+                        <span className="text-xs text-gray-500">
+                          👥 {conversation.participants}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {filteredConversations.length === 0 && (
+            <div className="p-8 text-center text-gray-500">
+              <MessageSquare size={48} className="mx-auto mb-4 text-gray-300" />
+              <p>Nessuna conversazione trovata</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* COLONNA CENTRO: Dettagli Conversazione */}
+      <div className="flex-1 bg-white flex flex-col">
+        {selectedConversation ? (
+          <>
+            {/* Header conversazione */}
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                    {selectedConversation.title.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-gray-900">
+                      {selectedConversation.title}
+                    </h2>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>
+                        {getNetworkIcon(selectedConversation.network)}{" "}
+                        {selectedConversation.network}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        {selectedConversation.type === "group"
+                          ? "Gruppo"
+                          : "Chat privata"}
+                      </span>
+                      {selectedConversation.type === "group" && (
+                        <>
+                          <span>•</span>
+                          <span>
+                            {selectedConversation.participants} partecipanti
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button className="p-2 hover:bg-gray-200 rounded-md">
+                    <Phone size={18} />
+                  </button>
+                  <button className="p-2 hover:bg-gray-200 rounded-md">
+                    <Mail size={18} />
+                  </button>
+                  <button className="p-2 hover:bg-gray-200 rounded-md">
+                    <MoreVertical size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Area messaggi */}
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+              {loadingMessages ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1D70B3] mx-auto"></div>
+                    <p className="mt-2 text-sm text-gray-600">
+                      Caricamento messaggi...
+                    </p>
+                  </div>
+                </div>
+              ) : messages.length > 0 ? (
+                <div className="space-y-4">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${
+                        message.sender.isMe ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                          message.sender.isMe
+                            ? "bg-[#1D70B3] text-white"
+                            : "bg-white text-gray-900 shadow-sm border"
+                        }`}
+                      >
+                        {!message.sender.isMe && (
+                          <p className="text-xs font-medium text-gray-600 mb-1">
+                            {message.sender.name}
+                          </p>
+                        )}
+                        <p className="text-sm">{message.content}</p>
+                        <p
+                          className={`text-xs mt-1 ${
+                            message.sender.isMe
+                              ? "text-blue-100"
+                              : "text-gray-500"
+                          }`}
+                        >
+                          {new Date(message.timestamp).toLocaleTimeString(
+                            "it-IT",
+                            {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  <MessageSquare
+                    size={48}
+                    className="mx-auto mb-4 text-gray-300"
+                  />
+                  <p className="text-lg font-medium mb-2">Nessun messaggio</p>
+                  <p>I messaggi di questa conversazione appariranno qui</p>
+                </div>
+              )}
+            </div>
+
+            {/* Barra invio messaggio */}
+            <div className="p-4 border-t border-gray-200 bg-white">
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Scrivi un messaggio..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent"
+                />
+                <button className="bg-[#1D70B3] text-white p-2 rounded-full hover:bg-blue-700">
+                  <Plus size={20} />
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center text-gray-500">
+              <MessageSquare size={64} className="mx-auto mb-4 text-gray-300" />
+              <p className="text-xl font-medium mb-2">
+                Seleziona una conversazione
+              </p>
+              <p>
+                Scegli una conversazione dalla lista per visualizzarne i
+                dettagli
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* COLONNA DESTRA: Panel CRM */}
+      <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+        {selectedConversation ? (
+          <>
+            {/* Header CRM */}
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <User size={18} />
+                Informazioni Cliente
+              </h3>
+            </div>
+
+            {/* Informazioni cliente */}
+            <div className="p-4 border-b border-gray-200">
+              {customerInfo ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">
+                      Nome
+                    </label>
+                    <p className="text-gray-900">{customerInfo.name}</p>
+                  </div>
+                  {customerInfo.email && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">
+                        Email
+                      </label>
+                      <p className="text-gray-900">{customerInfo.email}</p>
+                    </div>
+                  )}
+                  {customerInfo.phone && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">
+                        Telefono
+                      </label>
+                      <p className="text-gray-900">{customerInfo.phone}</p>
+                    </div>
+                  )}
+                  {customerInfo.company && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">
+                        Azienda
+                      </label>
+                      <p className="text-gray-900">{customerInfo.company}</p>
+                    </div>
+                  )}
+                  {customerInfo.location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin size={14} className="text-gray-500" />
+                      <span className="text-sm text-gray-600">
+                        {customerInfo.location}
+                      </span>
+                    </div>
+                  )}
+                  {customerInfo.orders && (
+                    <div className="flex items-center gap-2">
+                      <Package size={14} className="text-gray-500" />
+                      <span className="text-sm text-gray-600">
+                        {customerInfo.orders} ordini • Ultimo:{" "}
+                        {customerInfo.lastOrder}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 py-4">
+                  <User size={32} className="mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">
+                    Informazioni cliente non disponibili
+                  </p>
+                  <button className="mt-2 text-[#1D70B3] text-sm hover:underline">
+                    Aggiungi informazioni
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Sezione Tag */}
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                  <Tag size={16} />
+                  Tag
+                </h4>
+                <button className="text-[#1D70B3] hover:bg-blue-50 p-1 rounded">
+                  <Plus size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {tags.length > 0 ? (
+                  tags.map((tag) => (
+                    <div
+                      key={tag.id}
+                      className="inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium"
+                      style={{
+                        backgroundColor: `${tag.color}20`,
+                        color: tag.color,
+                      }}
+                    >
+                      {tag.name}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">Nessun tag assegnato</p>
+                )}
+                <button className="text-sm text-[#1D70B3] hover:underline">
+                  + Aggiungi tag
+                </button>
+              </div>
+            </div>
+
+            {/* Sezione Note */}
+            <div className="flex-1 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                  <Edit3 size={16} />
+                  Note Private
+                </h4>
+                <button className="text-[#1D70B3] hover:bg-blue-50 p-1 rounded">
+                  <Plus size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {notes.length > 0 ? (
+                  notes.map((note) => (
+                    <div
+                      key={note.id}
+                      className="bg-yellow-50 border border-yellow-200 rounded-lg p-3"
+                    >
+                      <p className="text-sm text-gray-800 mb-2">
+                        {note.content}
+                      </p>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>{note.createdBy}</span>
+                        <span>
+                          {new Date(note.createdAt).toLocaleDateString("it-IT")}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-gray-500 py-6">
+                    <Edit3 size={24} className="mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm mb-2">Nessuna nota privata</p>
+                    <button className="text-[#1D70B3] text-sm hover:underline">
+                      Aggiungi la prima nota
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Area nuova nota */}
+              <div className="mt-4">
+                <textarea
+                  placeholder="Aggiungi una nota privata..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent resize-none"
+                />
+                <button className="mt-2 w-full bg-[#1D70B3] text-white py-2 px-4 rounded-md text-sm hover:bg-blue-700">
+                  Salva Nota
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center text-gray-500">
+              <User size={48} className="mx-auto mb-4 text-gray-300" />
+              <p>
+                Seleziona una conversazione per visualizzare le informazioni CRM
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
