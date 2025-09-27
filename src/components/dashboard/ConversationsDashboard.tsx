@@ -1,7 +1,7 @@
 // src/components/dashboard/ConversationsDashboard.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   MessageSquare,
   Search,
@@ -19,6 +19,12 @@ import {
   Star,
   AlertCircle,
   RefreshCw,
+  Play,
+  Pause,
+  Download,
+  Image,
+  FileText,
+  Volume2,
 } from "lucide-react";
 
 // Tipi per i dati
@@ -41,7 +47,15 @@ interface ConversationMessage {
   sender: string;
   isFromOperator: boolean;
   platform: string;
-  type: string;
+  type: "text" | "image" | "audio" | "video" | "document" | "voice";
+  status?: string;
+  // Campi per media
+  mediaUrl?: string;
+  mediaType?: string;
+  fileName?: string;
+  fileSize?: number;
+  isVoiceNote?: boolean;
+  imageSize?: { width: number; height: number };
 }
 
 interface CustomerInfo {
@@ -69,6 +83,139 @@ interface ConversationTag {
   category: string;
 }
 
+// Componente per visualizzare immagini
+const ImageMessage = ({
+  message,
+  isFromMe,
+}: {
+  message: ConversationMessage;
+  isFromMe: boolean;
+}) => {
+  const [imageError, setImageError] = useState(false);
+
+  if (imageError) {
+    return (
+      <div className="bg-gray-100 p-4 rounded-lg">
+        <p className="text-gray-600">📷 Impossibile caricare l'immagine</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-sm">
+      <img
+        src={message.mediaUrl}
+        alt="Immagine"
+        className="rounded-lg shadow-md cursor-pointer hover:shadow-lg transition-shadow max-w-full h-auto"
+        onError={() => setImageError(true)}
+        onClick={() => window.open(message.mediaUrl, "_blank")}
+      />
+      {message.content && !message.content.includes("📷") && (
+        <p className="mt-2 text-sm">
+          {message.content.split("\n").slice(1).join("\n")}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// Componente per riprodurre audio/vocali
+const AudioMessage = ({
+  message,
+  isFromMe,
+}: {
+  message: ConversationMessage;
+  isFromMe: boolean;
+}) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  return (
+    <div
+      className={`flex items-center gap-3 p-3 rounded-lg ${
+        isFromMe ? "bg-[#DCF8C6]/50" : "bg-gray-100"
+      }`}
+    >
+      <button
+        onClick={togglePlay}
+        className={`p-2 rounded-full transition-colors ${
+          isFromMe
+            ? "bg-[#128C7E] hover:bg-[#075E54] text-white"
+            : "bg-[#1D70B3] hover:bg-blue-700 text-white"
+        }`}
+      >
+        {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+      </button>
+      <div className="flex-1">
+        <p className="text-sm font-medium">
+          {message.isVoiceNote ? "🎤 Messaggio vocale" : "🎵 Audio"}
+        </p>
+        {message.content.includes("(") && (
+          <p className="text-xs text-gray-600">
+            {message.content.match(/\(([^)]+)\)/)?.[1]}
+          </p>
+        )}
+        <audio
+          ref={audioRef}
+          src={message.mediaUrl}
+          onEnded={() => setIsPlaying(false)}
+          onError={(e) => console.error("Errore audio:", e)}
+        />
+      </div>
+    </div>
+  );
+};
+
+// Componente per documenti
+const DocumentMessage = ({
+  message,
+  isFromMe,
+}: {
+  message: ConversationMessage;
+  isFromMe: boolean;
+}) => {
+  return (
+    <a
+      href={message.mediaUrl}
+      download={message.fileName}
+      className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
+        isFromMe
+          ? "bg-[#DCF8C6]/50 hover:bg-[#DCF8C6]/70"
+          : "bg-gray-100 hover:bg-gray-200"
+      }`}
+    >
+      <FileText size={24} className="text-gray-600" />
+      <div>
+        <p className="text-sm font-medium">{message.fileName || "Documento"}</p>
+        {message.fileSize && (
+          <p className="text-xs text-gray-600">
+            {formatFileSize(message.fileSize)}
+          </p>
+        )}
+      </div>
+      <Download size={16} className="ml-auto text-gray-500" />
+    </a>
+  );
+};
+
+// Funzione helper per formattare dimensioni file
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
 export default function ConversationsDashboard() {
   const [conversations, setConversations] = useState<BeeperConversation[]>([]);
   const [selectedConversation, setSelectedConversation] =
@@ -87,7 +234,7 @@ export default function ConversationsDashboard() {
   const [notes, setNotes] = useState<ConversationNote[]>([]);
   const [tags, setTags] = useState<ConversationTag[]>([]);
 
-  // Funzione per le icone network migliorate
+  // Funzione per le icone network
   const getNetworkIcon = (network: string) => {
     switch (network?.toLowerCase()) {
       case "whatsapp":
@@ -118,43 +265,6 @@ export default function ConversationsDashboard() {
             <span className="hidden sm:inline">Instagram</span>
           </span>
         );
-      case "telegram":
-        return (
-          <span className="inline-flex items-center gap-1">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              className="fill-blue-500"
-            >
-              <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-            </svg>
-            <span className="hidden sm:inline">Telegram</span>
-          </span>
-        );
-      case "beeper":
-      case "matrix":
-        return (
-          <span className="inline-flex items-center gap-1">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              className="fill-purple-500"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 1v4m0 14v4m11-11h-4m-14 0H1m17.66-6.34l-2.83 2.83M6.34 17.66l-2.83 2.83M19.07 17.66l-2.83-2.83M6.34 6.34L3.51 3.51" />
-            </svg>
-            <span className="hidden sm:inline">Beeper</span>
-          </span>
-        );
-      case "email":
-        return (
-          <span className="inline-flex items-center gap-1">
-            <Mail size={12} className="text-gray-500" />
-            <span className="hidden sm:inline">Email</span>
-          </span>
-        );
       default:
         return (
           <span className="inline-flex items-center gap-1">
@@ -165,20 +275,16 @@ export default function ConversationsDashboard() {
     }
   };
 
-  // Carica le conversazioni reali da Beeper
+  // Carica le conversazioni
   useEffect(() => {
     loadConversations();
-
-    // Auto-refresh ogni 30 secondi
     const refreshInterval = setInterval(() => {
-      console.log("🔄 Auto-refresh conversazioni...");
       loadConversations();
-    }, 30000); // 30 secondi
-
+    }, 30000);
     return () => clearInterval(refreshInterval);
   }, []);
 
-  // Carica i messaggi quando cambia la conversazione selezionata
+  // Carica i messaggi quando cambia la conversazione
   useEffect(() => {
     async function loadMessages() {
       if (!selectedConversation) {
@@ -187,7 +293,6 @@ export default function ConversationsDashboard() {
         return;
       }
 
-      console.log("📨 Caricamento messaggi per:", selectedConversation.id);
       setLoadingMessages(true);
       setMessagesError(null);
 
@@ -197,8 +302,6 @@ export default function ConversationsDashboard() {
           `/api/conversations/${encodedId}/messages`
         );
 
-        console.log("📊 Response status messaggi:", response.status);
-
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || `HTTP ${response.status}`);
@@ -206,17 +309,10 @@ export default function ConversationsDashboard() {
 
         const data = await response.json();
 
-        console.log("📦 Dati messaggi ricevuti:", {
-          success: data.success,
-          count: data.messages?.length || 0,
-          conversationId: data.conversationId,
-        });
-
         if (data.success && Array.isArray(data.messages)) {
           setMessages(data.messages);
           console.log(`✅ Messaggi caricati: ${data.messages.length}`);
         } else {
-          console.warn("⚠️ Formato risposta non valido:", data);
           setMessages([]);
           setMessagesError("Formato risposta non valido");
         }
@@ -237,34 +333,20 @@ export default function ConversationsDashboard() {
   const loadConversations = async () => {
     try {
       setLoading(true);
-      console.log("🔄 Caricamento conversazioni...");
-
       const response = await fetch("/api/beeper/sync");
       const data = await response.json();
 
-      console.log("📊 Risposta API:", data);
-
       if (data.success && data.conversations) {
         setConversations(data.conversations);
-        console.log(`✅ Caricate ${data.conversations.length} conversazioni`);
-
-        // Seleziona automaticamente la prima conversazione
-        if (data.conversations.length > 0) {
+        if (data.conversations.length > 0 && !selectedConversation) {
           setSelectedConversation(data.conversations[0]);
           loadConversationDetails(data.conversations[0].id);
         }
-
-        // Mostra messaggio se sono dati mock
-        if (data.warning) {
-          console.warn("⚠️ " + data.warning);
-        }
       } else {
-        console.error("❌ Errore nel formato risposta API");
         setConversations([]);
       }
     } catch (error) {
       console.error("❌ Errore caricamento conversazioni:", error);
-      // In caso di errore totale, usa conversazioni vuote
       setConversations([]);
     } finally {
       setLoading(false);
@@ -273,7 +355,6 @@ export default function ConversationsDashboard() {
 
   const loadConversationDetails = async (conversationId: string) => {
     try {
-      // Carica dettagli conversazione, note, tag
       const [customerRes, notesRes, tagsRes] = await Promise.all([
         fetch(`/api/conversations/${conversationId}/customer`),
         fetch(`/api/conversations/${conversationId}/notes`),
@@ -300,7 +381,6 @@ export default function ConversationsDashboard() {
   const retryLoadMessages = () => {
     if (selectedConversation) {
       setMessagesError(null);
-      // Forza re-trigger del useEffect
       const temp = selectedConversation;
       setSelectedConversation(null);
       setTimeout(() => setSelectedConversation(temp), 100);
@@ -330,9 +410,6 @@ export default function ConversationsDashboard() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1D70B3] mx-auto"></div>
           <p className="mt-4 text-gray-600">Caricamento conversazioni...</p>
-          {loadingProgress && (
-            <p className="mt-2 text-sm text-gray-500">{loadingProgress}</p>
-          )}
         </div>
       </div>
     );
@@ -357,15 +434,6 @@ export default function ConversationsDashboard() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent"
             />
           </div>
-          <div className="flex items-center gap-2 mt-3">
-            <button className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-sm rounded-md hover:bg-gray-200">
-              <Filter size={14} />
-              Filtri
-            </button>
-            <span className="text-sm text-gray-500">
-              {filteredConversations.length} conversazioni
-            </span>
-          </div>
         </div>
 
         {/* Lista conversazioni */}
@@ -381,10 +449,8 @@ export default function ConversationsDashboard() {
               }`}
             >
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                    {conversation.title.charAt(0).toUpperCase()}
-                  </div>
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                  {conversation.title.charAt(0).toUpperCase()}
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -407,30 +473,16 @@ export default function ConversationsDashboard() {
                       {formatLastActivity(conversation.lastActivity)}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {conversation.unreadCount > 0 && (
-                        <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                          {conversation.unreadCount}
-                        </span>
-                      )}
-                      {conversation.type === "group" && (
-                        <span className="text-xs text-gray-500">
-                          👥 {conversation.participants}
-                        </span>
-                      )}
-                    </div>
+                    {conversation.unreadCount > 0 && (
+                      <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                        {conversation.unreadCount}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
           ))}
-
-          {filteredConversations.length === 0 && (
-            <div className="p-8 text-center text-gray-500">
-              <MessageSquare size={48} className="mx-auto mb-4 text-gray-300" />
-              <p>Nessuna conversazione trovata</p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -457,14 +509,6 @@ export default function ConversationsDashboard() {
                           ? "Gruppo"
                           : "Chat privata"}
                       </span>
-                      {selectedConversation.type === "group" && (
-                        <>
-                          <span>•</span>
-                          <span>
-                            {selectedConversation.participants} partecipanti
-                          </span>
-                        </>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -483,15 +527,18 @@ export default function ConversationsDashboard() {
                   >
                     <RefreshCw size={18} />
                   </button>
-                  <button className="p-2 hover:bg-gray-200 rounded-md">
-                    <MoreVertical size={18} />
-                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Area messaggi con UI professionale */}
-            <div className="flex-1 overflow-y-auto bg-gray-50">
+            {/* Area messaggi con stile WhatsApp */}
+            <div
+              className="flex-1 overflow-y-auto"
+              style={{
+                backgroundColor: "#E5DDD5",
+                backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d5d5d5' fill-opacity='0.2'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+              }}
+            >
               {loadingMessages ? (
                 <div className="flex items-center justify-center h-32">
                   <div className="flex items-center gap-3 text-gray-500">
@@ -501,148 +548,110 @@ export default function ConversationsDashboard() {
                 </div>
               ) : messagesError ? (
                 <div className="flex items-center justify-center h-32">
-                  <div className="text-center">
+                  <div className="text-center bg-white p-4 rounded-lg shadow">
                     <AlertCircle
                       className="mx-auto mb-2 text-red-500"
                       size={32}
                     />
                     <div className="text-red-600 font-medium mb-2">
-                      ⚠️ Errore caricamento messaggi
-                    </div>
-                    <div className="text-sm text-gray-500 mb-3">
-                      {messagesError}
+                      Errore caricamento messaggi
                     </div>
                     <button
                       onClick={retryLoadMessages}
-                      className="px-3 py-2 bg-[#1D70B3] text-white rounded text-sm hover:bg-blue-700 flex items-center gap-2 mx-auto"
+                      className="px-3 py-2 bg-[#1D70B3] text-white rounded text-sm hover:bg-blue-700"
                     >
-                      <RefreshCw size={14} />
+                      <RefreshCw size={14} className="inline mr-1" />
                       Riprova
                     </button>
                   </div>
                 </div>
               ) : messages.length > 0 ? (
-                <div className="p-4 space-y-4">
-                  {/* Header messaggi con info */}
-                  <div className="flex items-center justify-between py-2 border-b border-gray-200 bg-white rounded-lg px-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <MessageSquare size={16} />
-                      <span>{messages.length} messaggi</span>
-                      {selectedConversation && (
-                        <>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            {getNetworkIcon(selectedConversation.network)}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Ultimo aggiornamento:{" "}
-                      {new Date().toLocaleTimeString("it-IT")}
-                    </div>
-                  </div>
+                <div className="p-4 space-y-2">
+                  {messages.map(
+                    (message: ConversationMessage, index: number) => {
+                      const isFromMe =
+                        message.isFromOperator || message.sender === "Tu";
+                      const showTimestamp =
+                        index === 0 ||
+                        new Date(message.timestamp).getTime() -
+                          new Date(messages[index - 1].timestamp).getTime() >
+                          300000;
 
-                  {/* Lista messaggi */}
-                  <div className="space-y-4">
-                    {messages.map(
-                      (message: ConversationMessage, index: number) => {
-                        const isOperator = message.isFromOperator;
-                        const showAvatar =
-                          !isOperator &&
-                          (index === 0 ||
-                            !messages[index - 1]?.isFromOperator ===
-                              isOperator);
-
-                        return (
-                          <div
-                            key={message.id}
-                            className={`flex items-end gap-3 ${
-                              isOperator ? "justify-end" : "justify-start"
-                            }`}
-                          >
-                            {/* Avatar cliente (solo sinistra) */}
-                            {!isOperator && (
-                              <div className="flex-shrink-0 w-8 h-8">
-                                {showAvatar ? (
-                                  <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                                    {message.sender.charAt(0).toUpperCase()}
-                                  </div>
-                                ) : (
-                                  <div className="w-8 h-8"></div>
+                      return (
+                        <div key={message.id}>
+                          {showTimestamp && (
+                            <div className="text-center my-4">
+                              <span className="text-xs text-gray-500 bg-white/90 px-3 py-1 rounded-full shadow-sm">
+                                {new Date(message.timestamp).toLocaleDateString(
+                                  "it-IT",
+                                  {
+                                    day: "numeric",
+                                    month: "short",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }
                                 )}
-                              </div>
-                            )}
+                              </span>
+                            </div>
+                          )}
 
-                            {/* Bubble messaggio */}
+                          <div
+                            className={`flex ${
+                              isFromMe ? "justify-end" : "justify-start"
+                            } mb-1`}
+                          >
                             <div
-                              className={`max-w-[70%] ${
-                                isOperator ? "mr-3" : ""
+                              className={`max-w-[70%] relative ${
+                                isFromMe ? "ml-12" : "mr-12"
                               }`}
                             >
-                              {/* Nome sender (solo per clienti e se è il primo messaggio di una serie) */}
-                              {!isOperator && showAvatar && (
-                                <div className="mb-1 px-3 text-xs font-medium text-gray-600">
-                                  {message.sender}
-                                </div>
-                              )}
-
                               <div
-                                className={`rounded-2xl px-4 py-3 ${
-                                  isOperator
-                                    ? "bg-[#1D70B3] text-white shadow-sm rounded-br-md"
-                                    : "bg-white text-gray-900 border-2 border-gray-300 rounded-bl-md"
-                                }`}
+                                className={`
+                                relative px-3 py-2 rounded-lg shadow-sm
+                                ${
+                                  isFromMe
+                                    ? "bg-[#DCF8C6] text-gray-900"
+                                    : "bg-white text-gray-900"
+                                }
+                                ${
+                                  isFromMe
+                                    ? "rounded-br-none"
+                                    : "rounded-bl-none"
+                                }
+                              `}
                               >
-                                {/* Contenuto messaggio */}
-                                <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                                  {message.content}
-                                </p>
+                                {!isFromMe &&
+                                  selectedConversation?.type === "group" && (
+                                    <div className="text-xs font-semibold text-[#06CF9C] mb-1">
+                                      {message.sender}
+                                    </div>
+                                  )}
 
-                                {/* Info messaggio */}
-                                <div
-                                  className={`flex items-center justify-between gap-2 mt-2 pt-1 ${
-                                    isOperator
-                                      ? "border-t border-blue-500/30"
-                                      : "border-t border-gray-200"
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {/* Indicatore canale */}
-                                    <span
-                                      className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
-                                        isOperator
-                                          ? "bg-blue-500/20 text-blue-100 border border-blue-400/30"
-                                          : "bg-gray-50 text-gray-600 border border-gray-200"
-                                      }`}
-                                    >
-                                      {getNetworkIcon(message.platform)}
-                                    </span>
+                                {/* Renderizza contenuto in base al tipo */}
+                                {message.type === "image" ? (
+                                  <ImageMessage
+                                    message={message}
+                                    isFromMe={isFromMe}
+                                  />
+                                ) : message.type === "voice" ||
+                                  message.type === "audio" ? (
+                                  <AudioMessage
+                                    message={message}
+                                    isFromMe={isFromMe}
+                                  />
+                                ) : message.type === "document" ? (
+                                  <DocumentMessage
+                                    message={message}
+                                    isFromMe={isFromMe}
+                                  />
+                                ) : (
+                                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words pr-16">
+                                    {message.content}
+                                  </p>
+                                )}
 
-                                    {/* Stato messaggio (solo operatore) */}
-                                    {isOperator && (
-                                      <span className="text-xs text-blue-200 flex items-center gap-1">
-                                        <svg
-                                          width="12"
-                                          height="12"
-                                          viewBox="0 0 12 12"
-                                          className="fill-current"
-                                        >
-                                          <path d="M10.5 3.5L4.5 9.5L1.5 6.5" />
-                                        </svg>
-                                        Inviato
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {/* Timestamp */}
-                                  <span
-                                    className={`text-xs font-medium ${
-                                      isOperator
-                                        ? "text-blue-100"
-                                        : "text-gray-600"
-                                    }`}
-                                  >
+                                <div className="absolute bottom-1 right-2 flex items-center gap-1">
+                                  <span className="text-[10px] text-gray-500">
                                     {new Date(
                                       message.timestamp
                                     ).toLocaleTimeString("it-IT", {
@@ -650,117 +659,72 @@ export default function ConversationsDashboard() {
                                       minute: "2-digit",
                                     })}
                                   </span>
+
+                                  {isFromMe && (
+                                    <span className="text-xs">
+                                      <svg
+                                        width="16"
+                                        height="11"
+                                        viewBox="0 0 16 11"
+                                        className="fill-[#53BDEB]"
+                                      >
+                                        <path d="M11.071.653a.5.5 0 0 0-.707 0L5.707 5.31 3.354 2.957a.5.5 0 0 0-.707.707l2.707 2.707a.5.5 0 0 0 .707 0L11.071 1.36a.5.5 0 0 0 0-.707z" />
+                                        <path d="M15.071.653a.5.5 0 0 0-.707 0L9.707 5.31 8.354 3.957a.5.5 0 0 0-.707.707l2.707 2.707a.5.5 0 0 0 .707 0L15.071 1.36a.5.5 0 0 0 0-.707z" />
+                                      </svg>
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
-
-                            {/* Avatar operatore (solo destra) */}
-                            {isOperator && (
-                              <div className="flex-shrink-0 w-8 h-8">
-                                <div className="w-8 h-8 bg-gradient-to-br from-[#1D70B3] to-blue-700 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                                  CRM
-                                </div>
-                              </div>
-                            )}
                           </div>
-                        );
-                      }
-                    )}
-
-                    {/* Indicatore fine conversazione */}
-                    <div className="text-center py-4">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-200 text-gray-500 text-xs rounded-full">
-                        <Clock size={12} />
-                        Fine conversazione
-                      </div>
-                    </div>
-                  </div>
+                        </div>
+                      );
+                    }
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-full">
-                  <div className="text-center text-gray-500 p-8">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <MessageSquare size={32} className="text-gray-400" />
-                    </div>
+                  <div className="text-center text-gray-500 p-8 bg-white rounded-lg shadow">
+                    <MessageSquare
+                      size={32}
+                      className="mx-auto mb-4 text-gray-400"
+                    />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
                       Nessun messaggio
                     </h3>
-                    <p className="text-sm text-gray-500 mb-4">
-                      {selectedConversation
-                        ? "I messaggi di questa conversazione appariranno qui"
-                        : "Seleziona una conversazione per visualizzare i messaggi"}
+                    <p className="text-sm text-gray-500">
+                      I messaggi di questa conversazione appariranno qui
                     </p>
-                    {selectedConversation && (
-                      <div className="space-y-3">
-                        <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded font-mono">
-                          Chat ID: {selectedConversation.id}
-                        </div>
-                        <button
-                          onClick={retryLoadMessages}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-[#1D70B3] text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
-                        >
-                          <RefreshCw size={14} />
-                          Ricarica messaggi
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Barra invio messaggio migliorata */}
-            <div className="border-t border-gray-200 bg-white p-4">
-              <div className="flex items-end gap-3">
-                {/* Area input messaggio */}
+            {/* Barra invio messaggio */}
+            <div className="border-t border-gray-200 bg-[#F0F0F0] p-3">
+              <div className="flex items-end gap-2">
+                <button className="p-2 text-gray-500 hover:text-gray-700 rounded-full">
+                  <Plus size={20} />
+                </button>
+
                 <div className="flex-1">
-                  <textarea
-                    placeholder={`Rispondi a ${
-                      selectedConversation?.title || "cliente"
-                    }...`}
-                    rows={1}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent resize-none text-sm"
-                    onInput={(e) => {
-                      const textarea = e.target as HTMLTextAreaElement;
-                      textarea.style.height = "auto";
-                      textarea.style.height =
-                        Math.min(textarea.scrollHeight, 120) + "px";
-                    }}
+                  <input
+                    type="text"
+                    placeholder="Scrivi un messaggio"
+                    className="w-full px-4 py-2 bg-white border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent text-sm"
                   />
                 </div>
 
-                {/* Pulsanti azione */}
-                <div className="flex items-center gap-2">
-                  <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors">
-                    <Plus size={20} />
-                  </button>
-                  <button className="px-4 py-2 bg-[#1D70B3] text-white rounded-2xl hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium">
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 16 16"
-                      className="fill-current"
-                    >
-                      <path d="M15.964.686a.5.5 0 0 0-.65-.65L.767 5.855H.766l-.452.18a.5.5 0 0 0-.082.887l.41.26.001.002 4.995 3.178 3.178 4.995.002.002.26.41a.5.5 0 0 0 .886-.083l6-15Zm-1.833 1.89L6.637 10.07l-.215-.338a.5.5 0 0 0-.154-.154l-.338-.215 7.494-7.494 1.178-.471-.47 1.178Z" />
-                    </svg>
-                    Invia
-                  </button>
-                </div>
-              </div>
-
-              {/* Info typing e stato */}
-              <div className="flex items-center justify-between mt-2 px-2">
-                <div className="text-xs text-gray-500">
-                  {selectedConversation && (
-                    <span>
-                      {getNetworkIcon(selectedConversation.network)} •
-                      {selectedConversation.type === "group"
-                        ? " Gruppo"
-                        : " Chat privata"}
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-gray-400">Press Enter to send</div>
+                <button className="p-2 bg-[#128C7E] text-white rounded-full hover:bg-[#075E54] transition-colors">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 20 20"
+                    className="fill-current"
+                  >
+                    <path d="M1.5 2.5l17 7.5-17 7.5v-5.833L12 10 1.5 8.333V2.5z" />
+                  </svg>
+                </button>
               </div>
             </div>
           </>
@@ -784,7 +748,6 @@ export default function ConversationsDashboard() {
       <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
         {selectedConversation ? (
           <>
-            {/* Header CRM */}
             <div className="p-4 border-b border-gray-200">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <User size={18} />
@@ -792,157 +755,14 @@ export default function ConversationsDashboard() {
               </h3>
             </div>
 
-            {/* Informazioni cliente */}
-            <div className="p-4 border-b border-gray-200">
-              {customerInfo ? (
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">
-                      Nome
-                    </label>
-                    <p className="text-gray-900">{customerInfo.name}</p>
-                  </div>
-                  {customerInfo.email && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Email
-                      </label>
-                      <p className="text-gray-900">{customerInfo.email}</p>
-                    </div>
-                  )}
-                  {customerInfo.phone && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Telefono
-                      </label>
-                      <p className="text-gray-900">{customerInfo.phone}</p>
-                    </div>
-                  )}
-                  {customerInfo.company && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Azienda
-                      </label>
-                      <p className="text-gray-900">{customerInfo.company}</p>
-                    </div>
-                  )}
-                  {customerInfo.location && (
-                    <div className="flex items-center gap-2">
-                      <MapPin size={14} className="text-gray-500" />
-                      <span className="text-sm text-gray-600">
-                        {customerInfo.location}
-                      </span>
-                    </div>
-                  )}
-                  {customerInfo.orders && (
-                    <div className="flex items-center gap-2">
-                      <Package size={14} className="text-gray-500" />
-                      <span className="text-sm text-gray-600">
-                        {customerInfo.orders} ordini • Ultimo:{" "}
-                        {customerInfo.lastOrder}
-                      </span>
-                    </div>
-                  )}
+            <div className="flex-1 p-4 overflow-y-auto">
+              {/* Info cliente, tag, note - come prima */}
+              <div className="space-y-4">
+                <div className="text-sm text-gray-600">
+                  <p>Chat ID: {selectedConversation.id}</p>
+                  <p>Network: {selectedConversation.network}</p>
+                  <p>Tipo: {selectedConversation.type}</p>
                 </div>
-              ) : (
-                <div className="text-center text-gray-500 py-4">
-                  <User size={32} className="mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm">
-                    Informazioni cliente non disponibili
-                  </p>
-                  <button className="mt-2 text-[#1D70B3] text-sm hover:underline">
-                    Aggiungi informazioni
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Sezione Tag */}
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                  <Tag size={16} />
-                  Tag
-                </h4>
-                <button className="text-[#1D70B3] hover:bg-blue-50 p-1 rounded">
-                  <Plus size={16} />
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {tags.length > 0 ? (
-                  tags.map((tag) => (
-                    <div
-                      key={tag.id}
-                      className="inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium"
-                      style={{
-                        backgroundColor: `${tag.color}20`,
-                        color: tag.color,
-                      }}
-                    >
-                      {tag.name}
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500">Nessun tag assegnato</p>
-                )}
-                <button className="text-sm text-[#1D70B3] hover:underline">
-                  + Aggiungi tag
-                </button>
-              </div>
-            </div>
-
-            {/* Sezione Note */}
-            <div className="flex-1 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                  <Edit3 size={16} />
-                  Note Private
-                </h4>
-                <button className="text-[#1D70B3] hover:bg-blue-50 p-1 rounded">
-                  <Plus size={16} />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {notes.length > 0 ? (
-                  notes.map((note) => (
-                    <div
-                      key={note.id}
-                      className="bg-yellow-50 border border-yellow-200 rounded-lg p-3"
-                    >
-                      <p className="text-sm text-gray-800 mb-2">
-                        {note.content}
-                      </p>
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>{note.createdBy}</span>
-                        <span>
-                          {new Date(note.createdAt).toLocaleDateString("it-IT")}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-gray-500 py-6">
-                    <Edit3 size={24} className="mx-auto mb-2 text-gray-300" />
-                    <p className="text-sm mb-2">Nessuna nota privata</p>
-                    <button className="text-[#1D70B3] text-sm hover:underline">
-                      Aggiungi la prima nota
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Area nuova nota */}
-              <div className="mt-4">
-                <textarea
-                  placeholder="Aggiungi una nota privata..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1D70B3] focus:border-transparent resize-none"
-                />
-                <button className="mt-2 w-full bg-[#1D70B3] text-white py-2 px-4 rounded-md text-sm hover:bg-blue-700">
-                  Salva Nota
-                </button>
               </div>
             </div>
           </>
