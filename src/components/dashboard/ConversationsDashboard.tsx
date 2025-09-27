@@ -25,6 +25,7 @@ import {
   Image,
   FileText,
   Volume2,
+  Mic,
 } from "lucide-react";
 
 // Tipi per i dati
@@ -119,7 +120,10 @@ const ImageMessage = ({
   );
 };
 
-// Componente per riprodurre audio/vocali
+// Componente Audio con Debug per ConversationsDashboard.tsx
+// Componente Audio con Debug per ConversationsDashboard.tsx
+// Sostituisci il componente AudioMessage esistente con questo
+
 const AudioMessage = ({
   message,
   isFromMe,
@@ -127,51 +131,298 @@ const AudioMessage = ({
   message: ConversationMessage;
   isFromMe: boolean;
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioState, setAudioState] = useState<{
+    canPlay: boolean;
+    error: string | null;
+    duration: string;
+    currentTime: string;
+    loading: boolean;
+    readyState: number;
+    networkState: number;
+    mimeType: string | null;
+  }>({
+    canPlay: false,
+    error: null,
+    duration: "0:00",
+    currentTime: "0:00",
+    loading: true,
+    readyState: 0,
+    networkState: 0,
+    mimeType: null,
+  });
 
-  const togglePlay = () => {
-    if (audioRef.current) {
+  // Debug: Log dell'URL
+  useEffect(() => {
+    console.log("🎵 Audio URL:", message.mediaUrl);
+
+    // Controlla che l'URL esista prima di fare il fetch
+    if (message.mediaUrl) {
+      // Prova a fare fetch dell'audio per vedere il content-type
+      fetch(message.mediaUrl, { method: "HEAD" })
+        .then((response) => {
+          const contentType = response.headers.get("content-type");
+          console.log("🎵 Content-Type dal server:", contentType);
+          setAudioState((prev) => ({ ...prev, mimeType: contentType }));
+        })
+        .catch((err) => console.log("❌ Errore fetch HEAD:", err));
+    } else {
+      console.log("⚠️ URL audio non definito");
+      setAudioState((prev) => ({
+        ...prev,
+        error: "URL audio mancante",
+        loading: false,
+      }));
+    }
+  }, [message.mediaUrl]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    let loadTimeout: NodeJS.Timeout;
+
+    const updateState = () => {
+      setAudioState((prev) => ({
+        ...prev,
+        readyState: audio.readyState,
+        networkState: audio.networkState,
+      }));
+
+      console.log("🎵 Audio state:", {
+        readyState: audio.readyState,
+        networkState: audio.networkState,
+        duration: audio.duration,
+        error: audio.error,
+        currentSrc: audio.currentSrc,
+      });
+    };
+
+    const handleLoadedMetadata = () => {
+      console.log("✅ Metadata caricati, duration:", audio.duration);
+      clearTimeout(loadTimeout);
+
+      if (!isNaN(audio.duration) && isFinite(audio.duration)) {
+        const mins = Math.floor(audio.duration / 60);
+        const secs = Math.floor(audio.duration % 60);
+        setAudioState((prev) => ({
+          ...prev,
+          duration: `${mins}:${secs.toString().padStart(2, "0")}`,
+          canPlay: true,
+          loading: false,
+          error: null,
+        }));
+      }
+    };
+
+    const handleCanPlayThrough = () => {
+      console.log("✅ Can play through!");
+      clearTimeout(loadTimeout);
+      setAudioState((prev) => ({
+        ...prev,
+        canPlay: true,
+        loading: false,
+        error: null,
+      }));
+    };
+
+    const handleError = (e: Event) => {
+      console.log("❌ Audio error:", audio.error);
+      clearTimeout(loadTimeout);
+
+      let errorMsg = "Formato non supportato";
+      if (audio.error) {
+        switch (audio.error.code) {
+          case 1:
+            errorMsg = "Caricamento interrotto";
+            break;
+          case 2:
+            errorMsg = "Errore di rete";
+            break;
+          case 3:
+            errorMsg = "Decodifica fallita";
+            break;
+          case 4:
+            errorMsg = "Formato non supportato";
+            break;
+        }
+      }
+
+      setAudioState((prev) => ({
+        ...prev,
+        canPlay: false,
+        loading: false,
+        error: errorMsg,
+      }));
+    };
+
+    const handleTimeUpdate = () => {
+      const mins = Math.floor(audio.currentTime / 60);
+      const secs = Math.floor(audio.currentTime % 60);
+      setAudioState((prev) => ({
+        ...prev,
+        currentTime: `${mins}:${secs.toString().padStart(2, "0")}`,
+      }));
+    };
+
+    const handleLoadStart = () => {
+      console.log("🔄 Load start");
+      setAudioState((prev) => ({ ...prev, loading: true }));
+
+      // Timeout di 5 secondi
+      loadTimeout = setTimeout(() => {
+        console.log("⏱️ Timeout raggiunto");
+        if (audioState.loading) {
+          setAudioState((prev) => ({
+            ...prev,
+            loading: false,
+            error: "Timeout caricamento",
+          }));
+        }
+      }, 5000);
+    };
+
+    const handleProgress = () => {
+      updateState();
+    };
+
+    // Aggiungi tutti gli event listener
+    audio.addEventListener("loadstart", handleLoadStart);
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("canplaythrough", handleCanPlayThrough);
+    audio.addEventListener("error", handleError);
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("progress", handleProgress);
+    audio.addEventListener("stalled", () => console.log("⚠️ Stalled"));
+    audio.addEventListener("suspend", () => console.log("⚠️ Suspend"));
+    audio.addEventListener("waiting", () => console.log("⚠️ Waiting"));
+
+    // Forza il caricamento
+    audio.load();
+
+    return () => {
+      clearTimeout(loadTimeout);
+      audio.removeEventListener("loadstart", handleLoadStart);
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("canplaythrough", handleCanPlayThrough);
+      audio.removeEventListener("error", handleError);
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("progress", handleProgress);
+    };
+  }, [message.mediaUrl]);
+
+  const togglePlay = async () => {
+    if (!audioRef.current || !audioState.canPlay) {
+      // Se non può riprodurre, apri in nuova tab
+      window.open(message.mediaUrl, "_blank");
+      return;
+    }
+
+    try {
       if (isPlaying) {
         audioRef.current.pause();
+        setIsPlaying(false);
       } else {
-        audioRef.current.play();
+        await audioRef.current.play();
+        setIsPlaying(true);
       }
-      setIsPlaying(!isPlaying);
+    } catch (err) {
+      console.error("Errore play:", err);
+      window.open(message.mediaUrl, "_blank");
     }
+  };
+
+  // Debug info
+  const getDebugInfo = () => {
+    const states = [
+      "HAVE_NOTHING",
+      "HAVE_METADATA",
+      "HAVE_CURRENT_DATA",
+      "HAVE_FUTURE_DATA",
+      "HAVE_ENOUGH_DATA",
+    ];
+    const networks = [
+      "NETWORK_EMPTY",
+      "NETWORK_IDLE",
+      "NETWORK_LOADING",
+      "NETWORK_NO_SOURCE",
+    ];
+    return `Ready: ${
+      states[audioState.readyState] || audioState.readyState
+    }, Net: ${networks[audioState.networkState] || audioState.networkState}`;
   };
 
   return (
     <div
-      className={`flex items-center gap-3 p-3 rounded-lg ${
+      className={`p-3 rounded-lg ${
         isFromMe ? "bg-[#DCF8C6]/50" : "bg-gray-100"
       }`}
     >
-      <button
-        onClick={togglePlay}
-        className={`p-2 rounded-full transition-colors ${
-          isFromMe
-            ? "bg-[#128C7E] hover:bg-[#075E54] text-white"
-            : "bg-[#1D70B3] hover:bg-blue-700 text-white"
-        }`}
+      {/* Audio nascosto - prova formati diversi */}
+      <audio
+        ref={audioRef}
+        preload="auto"
+        style={{ display: "none" }}
+        crossOrigin="anonymous"
       >
-        {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-      </button>
-      <div className="flex-1">
-        <p className="text-sm font-medium">
-          {message.isVoiceNote ? "🎤 Messaggio vocale" : "🎵 Audio"}
-        </p>
-        {message.content.includes("(") && (
-          <p className="text-xs text-gray-600">
-            {message.content.match(/\(([^)]+)\)/)?.[1]}
-          </p>
+        {/* Prova diversi formati in ordine di priorità */}
+        <source src={message.mediaUrl} type="audio/ogg; codecs=opus" />
+        <source src={message.mediaUrl} type="audio/ogg" />
+        <source src={message.mediaUrl} type="audio/mpeg" />
+        <source src={message.mediaUrl} type="audio/mp4" />
+        <source src={message.mediaUrl} type="audio/wav" />
+        <source src={message.mediaUrl} type="audio/webm; codecs=opus" />
+        <source src={message.mediaUrl} type="audio/webm" />
+        <source src={message.mediaUrl} />
+      </audio>
+
+      <div className="flex items-center gap-3">
+        <Mic className="w-4 h-4 flex-shrink-0" />
+
+        {audioState.loading ? (
+          <div className="flex items-center gap-2 flex-1">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-400 border-t-transparent"></div>
+            <span className="text-xs text-gray-600">Caricamento...</span>
+          </div>
+        ) : audioState.error ? (
+          <div className="flex-1">
+            <button
+              onClick={() => window.open(message.mediaUrl, "_blank")}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              📥 Scarica audio ({audioState.error})
+            </button>
+            <div className="text-xs text-gray-500 mt-1">
+              MIME: {audioState.mimeType || "sconosciuto"}
+            </div>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={togglePlay}
+              className={`p-2 rounded-full transition-colors flex-shrink-0 ${
+                isFromMe
+                  ? "bg-[#128C7E] hover:bg-[#075E54] text-white"
+                  : "bg-[#1D70B3] hover:bg-blue-700 text-white"
+              }`}
+            >
+              {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+            </button>
+
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  {message.isVoiceNote ? "Messaggio vocale" : "Audio"}
+                </span>
+                <span className="text-xs text-gray-600">
+                  {isPlaying ? audioState.currentTime : audioState.duration}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400">{getDebugInfo()}</div>
+            </div>
+          </>
         )}
-        <audio
-          ref={audioRef}
-          src={message.mediaUrl}
-          onEnded={() => setIsPlaying(false)}
-          onError={(e) => console.error("Errore audio:", e)}
-        />
       </div>
     </div>
   );
