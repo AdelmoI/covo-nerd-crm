@@ -5,16 +5,12 @@ WORKDIR /app
 # Copia package files
 COPY package*.json ./
 
-# Installa dipendenze
-RUN npm ci --omit=dev
+# Installa TUTTE le dipendenze (incluse dev per il build)
+RUN npm ci
 
 # Copia tutto il progetto
 COPY . .
 
-# SALTA IL BUILD - Lo faremo a runtime
-# Questo evita problemi con le variabili d'ambiente
-
-EXPOSE 3000
-
-# Build e start a runtime quando le variabili sono disponibili
+# Build a runtime (quando le variabili sono disponibili)
+# e poi avvia il server
 CMD ["sh", "-c", "npm run build && npm start"]
