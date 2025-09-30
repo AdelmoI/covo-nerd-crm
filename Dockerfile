@@ -6,17 +6,15 @@ WORKDIR /app
 COPY package*.json ./
 
 # Installa dipendenze
-RUN npm ci --production=false
+RUN npm ci --omit=dev
 
-# Copia tutto
+# Copia tutto il progetto
 COPY . .
 
-# Build Next.js
-RUN npm run build
-
-# Pulisci dipendenze dev
-RUN npm prune --production
+# SALTA IL BUILD - Lo faremo a runtime
+# Questo evita problemi con le variabili d'ambiente
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# Build e start a runtime quando le variabili sono disponibili
+CMD ["sh", "-c", "npm run build && npm start"]
